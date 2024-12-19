@@ -23,7 +23,7 @@ while True:
     for i in range(8):
         for j in range(8):
             for c in range(64):
-                if j == i:
+                if j % 3 == i % 3:
                     pixels[j*64 + c] = colors[j]
                 else:
                     pixels[j*64 + c] = colors[(i+1)%len(colors)]

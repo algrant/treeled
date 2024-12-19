@@ -32,6 +32,6 @@ while True:
         pixels = [(0,0,0)] * numLEDs
         client.put_pixels(pixels)
         time.sleep(0.5)
-        pixels[i] = (200,200,200)
+        pixels[i] = (255,255,255)
         client.put_pixels(pixels)
         time.sleep(0.5)
