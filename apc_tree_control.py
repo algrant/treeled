@@ -68,6 +68,7 @@ STATE = {
 }
 
 OPC_CLIENT = opc.Client(OPC_ADDRESS)
+TWINKLE_CACHE = {"next_refresh": 0.0, "frame": [(0, 0, 0)] * LED_COUNT}
 
 
 def mix(color, factor, brightness):
@@ -75,26 +76,37 @@ def mix(color, factor, brightness):
 
 
 def apply_animation(t):
+    global TWINKLE_CACHE
     n = LED_COUNT
     base = PALETTE[STATE["base_color"]]
     accent = PALETTE[STATE["accent_color"]]
     brightness = STATE["brightness"]
-    speed = max(0.05, STATE["speed"]) * 4.0
+    speed = max(0.05, STATE["speed"]) * 1.0
     buf = []
 
     if STATE["mode"] == 0:  # solid
         buf = [mix(base, 1.0, brightness)] * n
-    elif STATE["mode"] == 1:  # twinkle
-        for _ in range(n):
-            if random.random() > STATE["twinkle_density"]:
-                buf.append(mix(base, 0.4, brightness))
-            else:
-                buf.append(mix(accent, random.random(), brightness))
-    elif STATE["mode"] == 2:  # swirl (sin wave)
+    elif STATE["mode"] == 1:  # twinkle (slower refresh)
+        if t >= TWINKLE_CACHE["next_refresh"]:
+            period = 0.1 + 0.5 * (1 - STATE["speed"])  # slower when speed fader is down
+            TWINKLE_CACHE["next_refresh"] = t + period
+            new_frame = []
+            for _ in range(n):
+                if random.random() > STATE["twinkle_density"]:
+                    new_frame.append(mix(base, 0.4, brightness))
+                else:
+                    new_frame.append(mix(accent, random.random(), brightness))
+            TWINKLE_CACHE["frame"] = new_frame
+        buf = TWINKLE_CACHE["frame"]
+    elif STATE["mode"] == 2:  # swirl (sin wave) with base as background
         phase = t * speed + STATE["swirl_phase"]
         for i in range(n):
             v = (math.sin((i / n) * math.tau + phase) + 1) / 2
-            buf.append(mix(accent, 0.2 + 0.8 * v, brightness))
+            accent_mix = 0.2 + 0.8 * v
+            # Blend base as a floor, accent rides on top.
+            base_component = mix(base, 0.2, brightness)
+            accent_component = mix(accent, accent_mix, brightness)
+            buf.append(tuple(min(255, b + a) for b, a in zip(base_component, accent_component)))
     elif STATE["mode"] == 3:  # chase
         phase = int((t * speed * n)) % n
         length = max(1, int(STATE["chase_length"] * n))
@@ -132,10 +144,17 @@ def set_pad_led(outport, note, color_idx, channel=LED_FEEDBACK_CHANNEL):
     outport.send(Message("note_on", note=note, velocity=color_idx, channel=channel))
 
 
+def set_single_led(outport, note, on=True, blink=False):
+    # Per protocol: channel 0, velocity 0=off, 1=on, 2=blink
+    velocity = 2 if blink else (1 if on else 0)
+    outport.send(Message("note_on", channel=0, note=note, velocity=velocity))
+
+
 def light_mode_buttons(outport):
-    base_note = 82
+    base_note = 0x70  # Scene launch buttons 1-5
     for i in range(5):
-        set_pad_led(outport, base_note + i, 3 if i == STATE["mode"] else 1)
+        note = base_note + i
+        set_single_led(outport, note, on=(i == STATE["mode"]), blink=False)
 
 
 def light_color_grid(outport):
@@ -178,8 +197,9 @@ def handle_note(msg, outport):
             STATE["base_color"] = note
         elif 8 <= note <= 15:
             STATE["accent_color"] = note - 8
-        elif 82 <= note <= 86:
-            STATE["mode"] = note - 82
+        elif 0x70 <= note <= 0x77:
+            STATE["mode"] = note - 0x70
+            print(f"Mode changed to {STATE['mode']} via note {note}")
         light_mode_buttons(outport)
         light_color_grid(outport)
         return True
