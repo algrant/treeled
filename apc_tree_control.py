@@ -40,8 +40,20 @@ PALETTE = [
     (255, 255, 255),  # 7 white
 ]
 
-# Velocity values sent back to the APC for LED feedback
-LED_COLOR_TABLE = [0, 1, 2, 3, 4, 5, 6, 7]
+# APC Mini Mk2 uses a fixed 128-color table (velocity -> RGB). These entries align with PALETTE.
+LED_COLOR_TABLE = [
+    0,    # off
+    5,    # red (#FF0000)
+    21,   # green (#00FF00)
+    45,   # blue (#0000FF)
+    13,   # yellow (#FFFF00)
+    53,   # magenta (#FF00FF)
+    90,   # cyan-ish (#38FFCC)
+    3,    # white (#FFFFFF)
+]
+
+# MIDI channel for pad LED feedback: 6 == solid at 100% brightness per protocol table.
+LED_FEEDBACK_CHANNEL = 6
 
 STATE = {
     "mode": 0,            # 0 solid, 1 twinkle, 2 swirl, 3 chase, 4 sparkle
@@ -99,6 +111,8 @@ def apply_animation(t):
 
 
 def send_to_tree(pixels):
+    # Reorder RGB -> GRB for LED strip wiring.
+    pixels = [(g, r, b) for (r, g, b) in pixels]
     if len(pixels) < LED_COUNT:
         pixels = pixels + [(0, 0, 0)] * (LED_COUNT - len(pixels))
     elif len(pixels) > LED_COUNT:
@@ -114,7 +128,7 @@ def runner(stop_event):
         time.sleep(1.0 / FPS)
 
 
-def set_pad_led(outport, note, color_idx, channel=0):
+def set_pad_led(outport, note, color_idx, channel=LED_FEEDBACK_CHANNEL):
     outport.send(Message("note_on", note=note, velocity=color_idx, channel=channel))
 
 
