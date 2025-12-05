@@ -215,37 +215,47 @@ def find_port(substring, ports):
 
 def main():
     random.seed()
-    in_name = find_port(PORT_IN, mido.get_input_names())
-    out_name = find_port(PORT_OUT, mido.get_output_names())
-
-    print(f"Using MIDI ports: {in_name} / {out_name}")
     print(f"Sending OPC to {OPC_ADDRESS} for {LED_COUNT} LEDs")
 
-    stop_event = threading.Event()
-    runner_thread = None
-
-    with mido.open_input(in_name) as inp, mido.open_output(out_name) as outp:
-        light_mode_buttons(outp)
-        light_color_grid(outp)
-        runner_thread = threading.Thread(target=runner, args=(stop_event,), daemon=True)
-        runner_thread.start()
+    while True:
         try:
-            for msg in inp:
-                if msg.type == "control_change":
-                    handle_cc(msg)
-                elif msg.type in ("note_on", "note_off"):
-                    handle_note(msg, outp)
+            in_name = find_port(PORT_IN, mido.get_input_names())
+            out_name = find_port(PORT_OUT, mido.get_output_names())
+            print(f"Using MIDI ports: {in_name} / {out_name}")
+
+            stop_event = threading.Event()
+            runner_thread = None
+
+            with mido.open_input(in_name) as inp, mido.open_output(out_name) as outp:
+                light_mode_buttons(outp)
+                light_color_grid(outp)
+                runner_thread = threading.Thread(target=runner, args=(stop_event,), daemon=True)
+                runner_thread.start()
+                try:
+                    for msg in inp:
+                        if msg.type == "control_change":
+                            handle_cc(msg)
+                        elif msg.type in ("note_on", "note_off"):
+                            handle_note(msg, outp)
+                except KeyboardInterrupt:
+                    raise
+                finally:
+                    stop_event.set()
+                    if runner_thread:
+                        runner_thread.join()
+                    send_to_tree([(0, 0, 0)] * LED_COUNT)
+                    for note in range(0, 64):
+                        set_pad_led(outp, note, 0)
+                    for note in range(0x70, 0x78):
+                        set_single_led(outp, note, on=False)
+
         except KeyboardInterrupt:
-            pass
-        finally:
-            stop_event.set()
-            if runner_thread:
-                runner_thread.join()
-            send_to_tree([(0, 0, 0)] * LED_COUNT)
-            for note in range(0, 64):
-                set_pad_led(outp, note, 0)
-            for note in range(82, 90):
-                set_pad_led(outp, note, 0)
+            print("Exiting on user request.")
+            break
+        except Exception as exc:
+            # Catch ALSA/port errors, log, and retry.
+            print(f"MIDI error: {exc}. Retrying in 2s...")
+            time.sleep(2)
 
 
 if __name__ == "__main__":
